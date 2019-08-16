@@ -23,6 +23,12 @@ except socket.error as err:
     # exit with error code
     sys.exit(1)
 
+def RemoveClient(client):
+    for index, tclient in enumerate(client_sockets):
+        if tclient is client: 
+            print(f"removing client from list {index}")
+            client_sockets.remove(tclient)
+
 def HandleClient(client): 
     
     # send welcome 
@@ -57,11 +63,12 @@ def HandleClient(client):
                 buffer = []
             
                 # TODO: sends broadcast to others
-
+                
                 if string_to_send.strip() == "exit":
                     print("client issues exit command")
 
                     # TODO: sends client good bye and notify other connections
+                    RemoveClient(client)
                     break
                 elif string_to_send.strip() == "shutdown":
                     # uh oh!
