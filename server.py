@@ -5,8 +5,12 @@ import socket
 import sys
 import threading
 import datetime
+import configparser
 
-SERVER_PORT = 50009
+config = configparser.ConfigParser()
+config.read('config.ini')
+
+SERVER_PORT = int(config['SOCKET']['server_port'])
 
 def PrintMessage(message):
     print("{} {}".format(datetime.datetime.now().time(), message))
