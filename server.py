@@ -144,7 +144,7 @@ while True:
         
         #create client id out of their address and port
         cli_ip, cli_port = client_address
-        cli_id = cli_ip + ':' + str(cli_port)
+        cli_id = ':'.join([cli_ip, str(cli_port)])
 
         PrintMessage(f"client ID is \33[43;30m{cli_id}\33[0m")
 
