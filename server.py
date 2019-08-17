@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
-# Copyright 2019 Jiacheng Wu
+# Copyright 2019 Jiacheng Wu <jia.cheng.wu@gmail.com>
 
 import socket
 import sys
 import threading
+import datetime
 
 SERVER_PORT = 50009
+
+def PrintMessage(message):
+    print("{} {}".format(datetime.datetime.now().time(), message))
 
 try:
     # create socket, SOCK_STREAM means it will use TCP protocol
@@ -19,20 +23,45 @@ try:
     server_socket.listen(socket.SOMAXCONN)
 
 except socket.error as err: 
-    print("socket creation failed with error {}".format(err))
+    PrintMessage("fatal:socket creation failed with error {}".format(err))
     # exit with error code
     sys.exit(1)
 
-def RemoveClient(client):
-    for index, tclient in enumerate(client_sockets):
-        if tclient is client: 
-            print(f"removing client from list {index}")
-            client_sockets.remove(tclient)
+def Broadcast(message, who="SERVER", skip=None, is_action=False):
+    ts = datetime.datetime.now().strftime("%H:%M:%S")
+    for index in list(client_sockets):
+        if client_sockets[index] is skip: 
+            continue
+        else:
+            if is_action:
+                client_sockets[index].send("{} \33[41m{}\33[0m \r\n".format(ts, message.strip()).encode())
+            else:
+                client_sockets[index].send("{} \33[41m{}\33[0m said: {}\r\n".format(ts, who, message.strip()).encode())
 
-def HandleClient(client): 
+def GetClientID(client):
+    for index in list(client_sockets):
+        if client_sockets[index] is client:
+            return index
+
+def RemoveClient(client):
+    for index in list(client_sockets):
+        if client_sockets[index] is client: 
+            PrintMessage(f"removing client from list {index}")
+            del client_sockets[index]
+
+def HandleClient(client, client_id): 
     
     # send welcome 
-    client.send("welcome to this chatroom\n\r".encode())
+    client.send("""
+\r\n
+\33[42;30m OH NO! NOT ANOTHER TERMINAL CHAT ROOM! \33[0m\r\n
+Welcome! There are \33[44m {} \33[0m client(s) connected.\r\n
+Say something! Type 'exit' to end chat, 'shutdown' to end server.     
+""".format(len(client_sockets)-1).encode())
+
+    client.send("\n\r".encode())
+
+    Broadcast("new client joined the chat", "SERVER", client)
 
     string_to_send = ''
     buffer = []
@@ -42,80 +71,98 @@ def HandleClient(client):
         try:
             data = client.recv(1) 
         except socket.error as err:
-            print(f"socket error occurred on client thread {err}")
+            PrintMessage(f"error:socket error occurred on client thread {err}")
             client.close()
             break
         except:
-            print("unhandled error in client")
+            PrintMessage("error:unhandled error in client")
             break
 
         if not data: 
-            print('unable to recieve from client')
+            PrintMessage('error:unable to recieve from client')
             break 
         else:
             buffer.append(data)
 
             string_to_send = ''.join(x.decode('utf-8') for x in buffer)
             if string_to_send.find("\n") != -1:
-                print(f"client len({len(string_to_send)}): {string_to_send}") 
+                # removes newline and carriage return from received bytes
+                str_to_print = string_to_send.strip()
 
                 # clears buffer
                 buffer = []
             
-                # TODO: sends broadcast to others
-                
-                if string_to_send.strip() == "exit":
-                    print("client issues exit command")
+                PrintMessage(f"\33[41m{client_id}\33[0m said({len(string_to_send)}): {str_to_print}") 
 
-                    # TODO: sends client good bye and notify other connections
+                # sends broadcast to others
+                
+                if str_to_print == "exit":
+                    PrintMessage("notice:client issues exit command")
+
+                    # sends client good bye and notify other connections
+                    Broadcast("client {} has left the chat".format(client_id), "", client, True)
+
                     RemoveClient(client)
                     break
-                elif string_to_send.strip() == "shutdown":
+                elif str_to_print == "shutdown":
                     # uh oh!
-                    print("someone shuts down the server")
+                    PrintMessage("warning:client issues shutdown")
+                    Broadcast("server is shutting down :(", "SERVER")
                     try:
                         server_socket.shutdown(socket.SHUT_RDWR)                        
                     except:
-                        # TODO: raise this error to main thread
                         server_socket.close()
-                        print(f"unexpected error in shutdown command {sys.exc_info()}")
+                        # PrintMessage(f"unexpected error in shutdown command {sys.exc_info()}")
                     break
+                else:
+                    Broadcast(str_to_print, client_id, client)
 
             # send back reversed string to client 
             # client.send("you said something".encode())
     
     # connection closed 
-    print("thread exiting")
+    PrintMessage("notice:thread exiting")
     client.close()    
 
 client_threads = list()
 
-# a 'set' of clients socket since a set can only contain unique values
-client_sockets = list()
+# a disctionary of clients socket since a set can only contain unique values
+client_sockets = {}
+
+PrintMessage(f"server started on port {SERVER_PORT}")
 
 while True:
     try:
         # accept new connection
         new_client, client_address = server_socket.accept()
-        print("connected from ", client_address)
-        cli_thread = threading.Thread(target=HandleClient, args=(new_client,))
-        client_threads.append(cli_thread)
-        client_sockets.append(new_client)
+        PrintMessage(f"client connected from {client_address}")
+        
+        #create client id out of their address and port
+        cli_ip, cli_port = client_address
+        cli_id = cli_ip + ':' + str(cli_port)
+
+        PrintMessage(f"client ID is \33[43;30m{cli_id}\33[0m")
+
+        # launch thread        
+        cli_thread = threading.Thread(target=HandleClient, args=(new_client,cli_id,))
+
+        client_sockets[cli_id] = new_client
         cli_thread.start()
-    except:
-        #print(f"unexpected error caught {sys.exc_info()}")
-        print("unexpected error caught")
+        client_threads.append(cli_thread)
+    except (OSError, WindowsError):
+        PrintMessage("notice:server closing")
         if server_socket:
             server_socket.close()
-        for index, client in enumerate(client_sockets):
-            if client: 
-                print(f"closing client {index}")
-                client.close()
+        for index in client_sockets:
+            if client_sockets[index]: 
+                PrintMessage(f"closing client {index}")
+                client_sockets[index].close()
         break
-    
+    except:
+        print(f"unexpected error caught {sys.exc_info()}")
+        break
 
 # join all threads
 for index, thread in enumerate(client_threads):
-    print(f"Main : before joining thread {index}")
     thread.join()
-    print(f"Main : thread {index} done")
+    PrintMessage(f"closing thread {index} done")
