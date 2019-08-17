@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2019 Jiacheng Wu <jia.cheng.wu@gmail.com>
+# Link https://github.com/jasonwubz/python-terminal-chatroom
 
 import socket
 import sys
